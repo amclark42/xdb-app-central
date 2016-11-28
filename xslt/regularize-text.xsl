@@ -62,9 +62,11 @@
   
   <!-- Working assumptions:
         * Elements in a "pbGroup" will always share the same parent.
+          * This apparently isn't always true in our textbase, but it probably should be.
         * If there are text nodes in between pbGroup elements, they will contain only whitespace.
         * Relevant <mw>s have a @type of "catch", "pageNum", "sig", or "vol".
         * <milestone> must appear immediately after <pb>.
+        * Catchwords must appear before <pb>.
         * Other @types of <mw> can appear either before or after <pb>, depending on the text.
         * Each pbGroup must contain, at minimum, one <pb> and one <milestone> (2 members minimum).
         * Each pbGroup may contain one <mw> of each relevant @type (6 members maximum).
@@ -77,7 +79,15 @@
         <xsl:variable name="groupmates">
           <xsl:variable name="my-position" select="position()"/>
           <xsl:variable name="siblings-after" select="subsequence(parent::*/(* | text()),$my-position,11)"/>
-          <xsl:variable name="first-nonmatch" select="index-of($siblings-after, $siblings-after[not(wf:is-pbGroup-candidate(.))][1])[1]"/>
+          <xsl:variable name="first-nonmatch">
+            <xsl:variable name="nonmatches" as="xs:boolean*">
+              <xsl:for-each select="$siblings-after">
+                <xsl:variable name="this" select="."/>
+                <xsl:value-of select="not(wf:is-pbGroup-candidate($this))"/>
+              </xsl:for-each>
+            </xsl:variable>
+            <xsl:value-of select="index-of($nonmatches,true())[1]"/>
+          </xsl:variable>
           <xsl:variable name="potential-group" select=" if ( exists($first-nonmatch) ) then 
                                                           subsequence($siblings-after, 1, $first-nonmatch - 1) 
                                                         else $siblings-after"/>
@@ -86,13 +96,11 @@
                                                 if ( $i[self::mw] ) then 
                                                   $i/@type
                                                 else $i/local-name()"/>
-          <xsl:message><xsl:value-of select="string-join($pattern,'/')"/></xsl:message>
+          <xsl:message>
+            <xsl:value-of select="string-join($pattern,'/')"/>
+          </xsl:message>
           <xsl:copy-of select="$potential-group"/>
         </xsl:variable>
-        <!--<xsl:variable name="last" 
-          select="following-sibling::*[wf:is-pbGroup-candidate(.)]
-                                      [preceding::text()[1][normalize-space(.) eq '']]
-                                      [not(following-sibling::*[1][wf:is-pbGroup-candidate(.)])][1]"/>-->
         <!--<xsl:message>
           I am a <xsl:value-of select="local-name()"/>.
           My parent is <xsl:value-of select="parent::*/local-name()"/>.
@@ -106,7 +114,10 @@
   <xsl:template match="text()" mode="pbGrouper"/>
   
   <xsl:template match="mw | pb | milestone" mode="pbGrouper">
-    <xsl:copy-of select="."/>
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+      <!-- No text children are carried through. -->
+    </xsl:copy>
   </xsl:template>
   
   <!--<xsl:template match="mw[@type eq 'catch']" mode="#all"/>-->
