@@ -11,33 +11,49 @@
   
   <xsl:output indent="yes"/>
   
+  
   <!-- FUNCTIONS -->
   
-  <xsl:function name="wf:is-pbGroup-candidate" as="xs:boolean">
-    <xsl:param name="element" as="node()"/>
-    <xsl:value-of select="exists($element [  self::mw[@type = ('catch', 'pageNum', 'sig', 'vol')] 
-                                          or self::pb 
-                                          or self::milestone
-                                          or self::text()[normalize-space() eq ''] ])"/>
+  <xsl:function name="wf:get-first-word" as="xs:string">
+    <xsl:param name="text" as="xs:string"/>
+    <xsl:variable name="slim-text" select="normalize-space($text)"/>
+    <xsl:value-of select="replace($slim-text,'^\s*(\w+[\.,;:?]?)((\s+|[―—]*).*)?$','$1')"/>
   </xsl:function>
+  
+  <xsl:function name="wf:is-pbGroup-candidate" as="xs:boolean">
+    <xsl:param name="node" as="node()"/>
+    <xsl:value-of select="exists( $node[  self::mw[@type = ('catch', 'pageNum', 'sig', 'vol')] 
+                                       or self::pb 
+                                       or self::milestone
+                                       or self::text()[normalize-space() eq ''] ] )"/>
+  </xsl:function>
+  
+  <xsl:function name="wf:remove-at-signs" as="xs:string">
+    <xsl:param name="text" as="xs:string"/>
+    <xsl:value-of select="replace($text,'@','')"/>
+  </xsl:function>
+  
   
   <!-- TEMPLATES -->
   
   <xsl:template match="/">
-    <xsl:apply-templates/>
+    <xsl:variable name="first-pass">
+      <xsl:apply-templates/>
+    </xsl:variable>
+    <xsl:apply-templates select="$first-pass" mode="unifier"/>
   </xsl:template>
   
-  <!-- Normalize 'ſ' to 's' and (temporarily) turn soft hyphens into @ signs. 
-    Whitespace after a soft hyphen is dropped. -->
+  <!-- Normalize 'ſ' to 's' and (temporarily) turn soft hyphens into '@'. Whitespace 
+    after a soft hyphen is dropped. -->
   <xsl:template match="text()">
     <xsl:value-of select="replace(translate(.,'ſ­','s@'),'@\s*','@')"/>
   </xsl:template>
   
   <!-- By default when matching elements, copy it and apply templates to its children. -->
-  <xsl:template match="*" priority="-40">
+  <xsl:template match="*" mode="#default unifier" priority="-40">
     <xsl:copy>
       <xsl:copy-of select="@*"/>
-      <xsl:apply-templates select="*|text()"/>
+      <xsl:apply-templates select="*|text()" mode="#current"/>
     </xsl:copy>
   </xsl:template>
   
@@ -52,7 +68,6 @@
   
   <!-- Remove <hi>s which capture Distinct Initial Capitals. -->
   <xsl:template match="hi [@rend][contains(@rend,'class(#DIC)')]
-                          [following-sibling::node()[1][self::hi[@rend][contains(@rend,'case(allcaps)')]]]
                      | hi [@rend][contains(@rend,'case(allcaps)')]
                           [preceding-sibling::node()[1][self::hi[@rend][contains(@rend,'class(#DIC)')]]]">
     <xsl:value-of select="text()"/>
@@ -66,7 +81,9 @@
                      else translate($text,'vujiVUJI','uvijUVIJ')"/>
   </xsl:template>
   
-  <!-- Remove <lb>s and <cb>s. -->
+  <!-- Remove <lb>s and <cb>s. Note that this doesn't take into account cases where 
+    the break occurs without any surrounding whitespace. Ex. "hello<lb/>friend" will 
+    render as "hellofriend" even though the <lb> implies whitespace. -->
   <xsl:template match="lb | cb"/>
   
   <!-- Working assumptions:
@@ -90,7 +107,7 @@
         <xsl:variable name="my-position" select="position()"/>
         <xsl:if test="count(subsequence(parent::*/(* | text()),1,$my-position)) gt 0">
           <xsl:variable name="groupmates">
-            <xsl:variable name="siblings-after" select="subsequence(parent::*/(* | text()),$my-position,12)"/>
+            <xsl:variable name="siblings-after" select="subsequence(parent::*/(* | text()),$my-position,14)"/>
             <xsl:variable name="first-nonmatch">
               <xsl:variable name="nonmatches" as="xs:boolean*">
                 <xsl:for-each select="$siblings-after">
@@ -108,9 +125,9 @@
                                                   if ( $i[self::mw] ) then 
                                                     $i/@type
                                                   else $i/local-name()"/>
-            <xsl:message>
+            <!--<xsl:message>
               <xsl:value-of select="string-join($pattern,'/')"/>
-            </xsl:message>
+            </xsl:message>-->
             <xsl:copy-of select="$potential-group"/>
           </xsl:variable>
           <!--<xsl:message>
@@ -124,6 +141,9 @@
     </xsl:if>
   </xsl:template>
   
+  
+  <!-- MODE: pbGrouper -->
+  
   <xsl:template match="text()" mode="pbGrouper"/>
   
   <xsl:template match="mw | pb | milestone" mode="pbGrouper">
@@ -131,6 +151,42 @@
       <xsl:copy-of select="@*"/>
       <!-- No children are carried through. -->
     </xsl:copy>
+  </xsl:template>
+  
+  
+  <!-- MODE: unifier -->
+  
+  <!-- Remove '@' delimiters from text. If the preceding non-whitespace node ended 
+    with an '@', remove the initial word fragment. -->
+  <xsl:template match="text()" mode="unifier" priority="-5">
+    <xsl:variable name="munged" select="if ( preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@$')] ) then
+                                          substring-after(., wf:get-first-word(.))
+                                        else ."/>
+    <xsl:value-of select="wf:remove-at-signs($munged)"/>
+  </xsl:template>
+  
+  <!-- Copy whitespace forward. -->
+  <xsl:template match="text()[normalize-space(.) eq '']" mode="unifier">
+    <xsl:copy/>
+  </xsl:template>
+  
+  <!-- If text has a soft-hyphen delimiter at the end, grab the next part of the 
+    word from the next non-whitespace text node. -->
+  <xsl:template match="text()[matches(.,'@$')]" mode="unifier" priority="30">
+    <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
+    <xsl:variable name="wordpart-one" select="replace(.,'.*\s+(.+)@$','$1')"/>
+    <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
+    <!--<xsl:variable name="last-word" select="concat($wordpart-one,$wordpart-two)"/>-->
+    <xsl:value-of select="wf:remove-at-signs(.)"/>
+    <xsl:value-of select="wf:remove-at-signs($wordpart-two)"/>
+    <xsl:text> </xsl:text>
+  </xsl:template>
+  
+  <!-- Add a blank line before pbGroups. -->
+  <xsl:template match="ab[@type eq 'pbGroup']" mode="unifier">
+    <xsl:text>
+</xsl:text>
+    <xsl:copy-of select="."/>
   </xsl:template>
   
 </xsl:stylesheet>
