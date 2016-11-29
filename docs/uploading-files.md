@@ -31,4 +31,6 @@ This method depends upon the files being available in the server. Either SCP the
 
 ### Command Line
 
+This method depends upon the files being available in the server. Either SCP them in from your local machine, or use version control to pull in updates.
+
 

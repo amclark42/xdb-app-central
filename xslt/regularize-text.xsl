@@ -7,7 +7,11 @@
   xpath-default-namespace="http://www.wwp.northeastern.edu/ns/textbase"
   version="2.0">
   
+  <!-- This stylesheet creates a version of a WWO text suitable for full-text indexing. -->
+  
   <xsl:output indent="yes"/>
+  
+  <!-- FUNCTIONS -->
   
   <xsl:function name="wf:is-pbGroup-candidate" as="xs:boolean">
     <xsl:param name="element" as="node()"/>
@@ -17,19 +21,24 @@
                                           or self::text()[normalize-space() eq ''] ])"/>
   </xsl:function>
   
-  <xsl:template match="text()">
-    <xsl:value-of select="translate(.,'ſ­','s@')"/>
+  <!-- TEMPLATES -->
+  
+  <xsl:template match="/">
+    <xsl:apply-templates/>
   </xsl:template>
   
+  <!-- Normalize 'ſ' to 's' and (temporarily) turn soft hyphens into @ signs. 
+    Whitespace after a soft hyphen is dropped. -->
+  <xsl:template match="text()">
+    <xsl:value-of select="replace(translate(.,'ſ­','s@'),'@\s*','@')"/>
+  </xsl:template>
+  
+  <!-- By default when matching elements, copy it and apply templates to its children. -->
   <xsl:template match="*" priority="-40">
     <xsl:copy>
       <xsl:copy-of select="@*"/>
       <xsl:apply-templates select="*|text()"/>
     </xsl:copy>
-  </xsl:template>
-  
-  <xsl:template match="/">
-    <xsl:apply-templates/>
   </xsl:template>
   
   <!-- Favor <expan> and <corr> within <choice>. -->
@@ -62,7 +71,7 @@
   
   <!-- Working assumptions:
         * Elements in a "pbGroup" will always share the same parent.
-          * This apparently isn't always true in our textbase, but it probably should be.
+          * This apparently isn't always true in our textbase, but it probably should be?
         * If there are text nodes in between pbGroup elements, they will contain only whitespace.
         * Relevant <mw>s have a @type of "catch", "pageNum", "sig", or "vol".
         * <milestone> must appear immediately after <pb>.
@@ -73,40 +82,44 @@
         * With intermediate whitespace, the final member of an pbGroup may be 11 positions away from the first, at most.
   -->
   <xsl:template match="mw[@type = ('catch', 'pageNum', 'sig', 'vol')] | pb | milestone">
-    <!-- If this is the first in an pbGroup, start pbGrouper mode to collect this element's related siblings. -->
+    <!-- If this is the first in an pbGroup, start pbGrouper mode to collect this 
+      element's related siblings. If there are other pbGroup candidates before this 
+      one, nothing happens. -->
     <xsl:if test="not(preceding-sibling::*[1][wf:is-pbGroup-candidate(.)])">
       <ab xmlns="http://www.wwp.northeastern.edu/ns/textbase" type="pbGroup">
-        <xsl:variable name="groupmates">
-          <xsl:variable name="my-position" select="position()"/>
-          <xsl:variable name="siblings-after" select="subsequence(parent::*/(* | text()),$my-position,11)"/>
-          <xsl:variable name="first-nonmatch">
-            <xsl:variable name="nonmatches" as="xs:boolean*">
-              <xsl:for-each select="$siblings-after">
-                <xsl:variable name="this" select="."/>
-                <xsl:value-of select="not(wf:is-pbGroup-candidate($this))"/>
-              </xsl:for-each>
+        <xsl:variable name="my-position" select="position()"/>
+        <xsl:if test="count(subsequence(parent::*/(* | text()),1,$my-position)) gt 0">
+          <xsl:variable name="groupmates">
+            <xsl:variable name="siblings-after" select="subsequence(parent::*/(* | text()),$my-position,12)"/>
+            <xsl:variable name="first-nonmatch">
+              <xsl:variable name="nonmatches" as="xs:boolean*">
+                <xsl:for-each select="$siblings-after">
+                  <xsl:variable name="this" select="."/>
+                  <xsl:value-of select="not(wf:is-pbGroup-candidate($this))"/>
+                </xsl:for-each>
+              </xsl:variable>
+              <xsl:value-of select="index-of($nonmatches,true())[1]"/>
             </xsl:variable>
-            <xsl:value-of select="index-of($nonmatches,true())[1]"/>
+            <xsl:variable name="potential-group" select=" if ( $first-nonmatch ne '' ) then 
+                                                            subsequence($siblings-after, 1, $first-nonmatch - 1) 
+                                                          else $siblings-after"/>
+            <xsl:variable name="pattern" select="for $i in $potential-group
+                                                 return 
+                                                  if ( $i[self::mw] ) then 
+                                                    $i/@type
+                                                  else $i/local-name()"/>
+            <xsl:message>
+              <xsl:value-of select="string-join($pattern,'/')"/>
+            </xsl:message>
+            <xsl:copy-of select="$potential-group"/>
           </xsl:variable>
-          <xsl:variable name="potential-group" select=" if ( exists($first-nonmatch) ) then 
-                                                          subsequence($siblings-after, 1, $first-nonmatch - 1) 
-                                                        else $siblings-after"/>
-          <xsl:variable name="pattern" select="for $i in $potential-group
-                                               return 
-                                                if ( $i[self::mw] ) then 
-                                                  $i/@type
-                                                else $i/local-name()"/>
-          <xsl:message>
-            <xsl:value-of select="string-join($pattern,'/')"/>
-          </xsl:message>
-          <xsl:copy-of select="$potential-group"/>
-        </xsl:variable>
-        <!--<xsl:message>
-          I am a <xsl:value-of select="local-name()"/>.
-          My parent is <xsl:value-of select="parent::*/local-name()"/>.
-          My position is <xsl:value-of select="position()"/>.
-        </xsl:message>-->
-        <xsl:apply-templates select="$groupmates" mode="pbGrouper"/>
+          <!--<xsl:message>
+            I am a <xsl:value-of select="local-name()"/>.
+            My parent is <xsl:value-of select="parent::*/local-name()"/>.
+            My position is <xsl:value-of select="position()"/>.
+          </xsl:message>-->
+          <xsl:apply-templates select="$groupmates" mode="pbGrouper"/>
+        </xsl:if>
       </ab>
     </xsl:if>
   </xsl:template>
@@ -116,10 +129,8 @@
   <xsl:template match="mw | pb | milestone" mode="pbGrouper">
     <xsl:copy>
       <xsl:copy-of select="@*"/>
-      <!-- No text children are carried through. -->
+      <!-- No children are carried through. -->
     </xsl:copy>
   </xsl:template>
-  
-  <!--<xsl:template match="mw[@type eq 'catch']" mode="#all"/>-->
   
 </xsl:stylesheet>
