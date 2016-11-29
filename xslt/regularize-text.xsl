@@ -30,7 +30,7 @@
   
   <xsl:function name="wf:remove-at-signs" as="xs:string">
     <xsl:param name="text" as="xs:string"/>
-    <xsl:value-of select="replace($text,'@','')"/>
+    <xsl:value-of select="replace($text,'@\s*','')"/>
   </xsl:function>
   
   
@@ -81,10 +81,10 @@
                      else translate($text,'vujiVUJI','uvijUVIJ')"/>
   </xsl:template>
   
-  <!-- Remove <lb>s and <cb>s. Note that this doesn't take into account cases where 
-    the break occurs without any surrounding whitespace. Ex. "hello<lb/>friend" will 
-    render as "hellofriend" even though the <lb> implies whitespace. -->
-  <xsl:template match="lb | cb"/>
+  <!-- Replace <lb>s and <cb>s with a single space. -->
+  <xsl:template match="lb | cb">
+    <xsl:text> </xsl:text>
+  </xsl:template>
   
   <!-- Working assumptions:
         * Elements in a "pbGroup" will always share the same parent.
@@ -159,7 +159,7 @@
   <!-- Remove '@' delimiters from text. If the preceding non-whitespace node ended 
     with an '@', remove the initial word fragment. -->
   <xsl:template match="text()" mode="unifier" priority="-5">
-    <xsl:variable name="munged" select="if ( preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@$')] ) then
+    <xsl:variable name="munged" select="if ( preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')] ) then
                                           substring-after(., wf:get-first-word(.))
                                         else ."/>
     <xsl:value-of select="wf:remove-at-signs($munged)"/>
@@ -172,9 +172,9 @@
   
   <!-- If text has a soft-hyphen delimiter at the end, grab the next part of the 
     word from the next non-whitespace text node. -->
-  <xsl:template match="text()[matches(.,'@$')]" mode="unifier" priority="30">
+  <xsl:template match="text()[matches(.,'@\s*$')]" mode="unifier" priority="30">
     <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
-    <xsl:variable name="wordpart-one" select="replace(.,'.*\s+(.+)@$','$1')"/>
+    <xsl:variable name="wordpart-one" select="replace(.,'.*\s+(.+)@\s*$','$1')"/>
     <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
     <!--<xsl:variable name="last-word" select="concat($wordpart-one,$wordpart-two)"/>-->
     <xsl:value-of select="wf:remove-at-signs(.)"/>
