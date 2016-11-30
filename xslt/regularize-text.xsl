@@ -27,6 +27,9 @@
   <xsl:function name="wf:is-pbGroup-candidate" as="xs:boolean">
     <xsl:param name="node" as="node()"/>
     <xsl:value-of select="exists( $node[  self::mw[@type = ('catch', 'pageNum', 'sig', 'vol')] 
+                                       (: The XPath above tests for mw with types that could trigger a pbGroup. 
+                                          The XPath below tests for mw that could belong to a pbGroup. :)
+                                       or self::mw[@type = ('border', 'border-ornamental', 'border-rule', 'other', 'pressFig', 'unknown')]
                                        or self::pb 
                                        or self::milestone
                                        or self::text()[normalize-space() eq ''] ] )"/>
@@ -63,20 +66,29 @@
     </xsl:copy>
   </xsl:template>
   
+  <!-- Per Syd's capitalized.xslt, remove the content of WWP notes. -->
+  <xsl:template match="note[@type eq 'WWP']">
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+    </xsl:copy>
+  </xsl:template>
+  
   <!-- Favor <expan>, <reg> and <corr> within <choice>. -->
   <xsl:template match="choice">
-    <xsl:apply-templates mode="choice"/>
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+      <xsl:apply-templates mode="choice"/>
+    </xsl:copy>
   </xsl:template>
   <xsl:template match="abbr | sic | orig" mode="choice"/>
   <xsl:template match="expan | corr | reg" mode="choice">
     <xsl:apply-templates mode="#default"/>
   </xsl:template>
   
-  <!-- Remove <hi>s which capture Distinct Initial Capitals. -->
-  <xsl:template match="hi [@rend][contains(@rend,'class(#DIC)')]
-                     | hi [@rend][contains(@rend,'case(allcaps)')]
-                          [preceding-sibling::node()[1][self::hi[@rend][contains(@rend,'class(#DIC)')]]]">
-    <xsl:value-of select="text()"/>
+  <!-- Remove wrapper <hi>s which capture Distinct Initial Capitals (and make sure 
+    the text content is uppercased). -->
+  <xsl:template match="hi[@rend][contains(@rend,'class(#DIC)')]">
+    <xsl:value-of select="upper-case(text())"/>
   </xsl:template>
   
   <!-- Silently replace <vuji> with its regularized character. -->
@@ -154,6 +166,10 @@
       </ab>
     </xsl:if>
   </xsl:template>
+  
+  <!-- Delete certain types of <mw> when they trail along with a pbGroup. -->
+  <xsl:template match="mw [@type = ('border', 'border-ornamental', 'border-rule', 'other', 'pressFig', 'unknown')]
+                          [preceding-sibling::*[1][wf:is-pbGroup-candidate(.)]]"/>
   
   
   <!-- MODE: pbGrouper -->
