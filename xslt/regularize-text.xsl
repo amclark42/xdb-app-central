@@ -116,8 +116,8 @@
         * However, blank pages can be grouped closely, increasing the maximum number of members.
         * pbGroups don't currently distinguish between the metawork around a single 
           <pb>. If they did, the following would apply:
-          * <milestone> must appear immediately after <pb>.
           * Catchwords must appear before <pb>.
+          * <milestone> must appear immediately after <pb>.
           * Other @types of <mw> can appear either before or after <pb>, depending on the text.
   -->
   <xsl:template match="mw[@type = ('catch', 'pageNum', 'sig', 'vol')] | pb | milestone">
@@ -127,48 +127,62 @@
     <xsl:if test="not(preceding-sibling::*[1][wf:is-pbGroup-candidate(.)])">
       <ab xmlns="http://www.wwp.northeastern.edu/ns/textbase" type="pbGroup">
         <xsl:variable name="my-position" select="position()"/>
-        <xsl:if test="count(subsequence(parent::*/(* | text()),1,$my-position)) gt 0">
-          <xsl:variable name="groupmates">
-            <xsl:variable name="siblings-after" as="node()*">
-              <xsl:variable name="all-after" select="subsequence(parent::*/(* | text()),$my-position,last())"/>
-              <xsl:copy-of select="if ( count($all-after) gt 14 ) then
-                                     subsequence($all-after,1,14)
-                                   else $all-after"/>
-            </xsl:variable>
-            <xsl:variable name="first-nonmatch">
-              <xsl:variable name="nonmatches" as="xs:boolean*">
-                <xsl:for-each select="$siblings-after">
-                  <xsl:variable name="this" select="."/>
-                  <xsl:value-of select="not(wf:is-pbGroup-candidate($this))"/>
-                </xsl:for-each>
-              </xsl:variable>
-              <xsl:value-of select="index-of($nonmatches,true())[1]"/>
-            </xsl:variable>
-            <xsl:variable name="potential-group" select=" if ( $first-nonmatch ne '' ) then 
-                                                            subsequence($siblings-after, 1, $first-nonmatch - 1) 
-                                                          else $siblings-after"/>
-            <xsl:variable name="pattern" select="for $i in $potential-group
-                                                 return 
-                                                  if ( $i[self::mw] ) then 
-                                                    $i/@type
-                                                  else $i/local-name()"/>
-            <xsl:if test="$first-nonmatch eq '' and count($siblings-after) eq 14">
-              <xsl:message>
-                <xsl:text>pbGroup may fail to find members after milestones </xsl:text>
-                <xsl:value-of select="string-join($potential-group[self::milestone]/@n,', ')"/>
-                <!--<xsl:value-of select="string-join($pattern,'/')"/>-->
-              </xsl:message>
-            </xsl:if>
-            <xsl:copy-of select="$potential-group"/>
-          </xsl:variable>
-          <xsl:apply-templates select="$groupmates" mode="pbGrouper"/>
-        </xsl:if>
+        <xsl:call-template name="pbSubsequencer">
+          <xsl:with-param name="start-position" select="$my-position"/>
+        </xsl:call-template>
       </ab>
+    </xsl:if>
+  </xsl:template>
+  
+  <!-- Group all pbGroup candidates together. If there are more than $max-length 
+    candidates within a pbGroup, call this template again on the next $max-length 
+    siblings. -->
+  <xsl:template name="pbSubsequencer">
+    <xsl:param name="start-position" as="xs:integer"/>
+    <xsl:variable name="max-length" select="14"/>
+    <xsl:if test="count(subsequence(parent::*/(* | text()),1,$start-position)) gt 0">
+      <xsl:variable name="groupmates">
+        <xsl:variable name="siblings-after" as="node()*">
+          <xsl:variable name="all-after" select="subsequence(parent::*/(* | text()),$start-position,last())"/>
+          <xsl:copy-of select="if ( count($all-after) gt $max-length ) then
+                                 subsequence($all-after,1,$max-length)
+                               else $all-after"/>
+        </xsl:variable>
+        <xsl:variable name="first-nonmatch">
+          <xsl:variable name="nonmatches" as="xs:boolean*">
+            <xsl:for-each select="$siblings-after">
+              <xsl:variable name="this" select="."/>
+              <xsl:value-of select="not(wf:is-pbGroup-candidate($this))"/>
+            </xsl:for-each>
+          </xsl:variable>
+          <xsl:value-of select="index-of($nonmatches,true())[1]"/>
+        </xsl:variable>
+        <xsl:variable name="potential-group" select=" if ( $first-nonmatch ne '' ) then 
+                                                        subsequence($siblings-after, 1, $first-nonmatch - 1) 
+                                                      else $siblings-after"/>
+        <xsl:variable name="pattern" select="for $i in $potential-group
+                                             return 
+                                              if ( $i[self::mw] ) then 
+                                                $i/@type
+                                              else $i/local-name()"/>
+        <!--<xsl:message>
+          <xsl:value-of select="string-join($pattern,'/')"/>
+        </xsl:message>-->
+        <xsl:copy-of select="$potential-group"/>
+        <xsl:if test="$first-nonmatch eq '' and count($siblings-after) eq $max-length">
+          <xsl:call-template name="pbSubsequencer">
+            <xsl:with-param name="start-position" select="$start-position + $max-length"/>
+          </xsl:call-template>
+        </xsl:if>
+      </xsl:variable>
+      <xsl:apply-templates select="$groupmates" mode="pbGrouper"/>
     </xsl:if>
   </xsl:template>
   
   <!-- Delete certain types of <mw> when they trail along with a pbGroup. -->
   <xsl:template match="mw [@type = ('border', 'border-ornamental', 'border-rule', 'other', 'pressFig', 'unknown')]
+                          [preceding-sibling::*[1][wf:is-pbGroup-candidate(.)]]
+                      | text()[normalize-space(.) eq ''] 
                           [preceding-sibling::*[1][wf:is-pbGroup-candidate(.)]]"/>
   
   
@@ -214,10 +228,11 @@
     <xsl:text> </xsl:text>
   </xsl:template>
   
-  <!-- Add a blank line before pbGroups, to aid readability. -->
+  <!-- Add blank lines around pbGroups, to aid readability. -->
   <xsl:template match="ab[@type eq 'pbGroup']" mode="unifier">
     <xsl:text>&#xa;</xsl:text>
     <xsl:copy-of select="."/>
+    <xsl:text>&#xa;&#xa;</xsl:text>
   </xsl:template>
   
 </xsl:stylesheet>
