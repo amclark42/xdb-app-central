@@ -8,14 +8,17 @@
   version="2.0">
   
   <!-- 
-    This stylesheet creates a version of a WWO text suitable for full-text indexing. 
+    This stylesheet creates a version of a WWO text suitable for full-text indexing, 
+    and any other activity where having access to semi-regularized, complete words 
+    might be useful. 
     
     Author: Ashley M. Clark
   -->
   
   <xsl:output indent="no"/>
   
-  <xsl:param name="remove-wwp-text" as="xs:boolean" select="false()"/>
+  <xsl:param name="removing-wwp-text"               as="xs:boolean" select="false()"/>
+  <xsl:param name="removing-line-and-column-breaks" as="xs:boolean" select="false()"/>
   
   
   <!-- FUNCTIONS -->
@@ -52,14 +55,19 @@
     <xsl:apply-templates select="$first-pass" mode="unifier"/>
   </xsl:template>
   
-  <!-- OPTIONAL: remove WWP text content -->
-  
-  <!-- If requested, remove the content of WWP notes and <figDesc>s. -->
-  <xsl:template match="note[@type eq 'WWP'][$remove-wwp-text eq true()]
-                     | figDesc             [$remove-wwp-text eq true()]">
+  <!-- Copy the element and its attributes, but none of its descendants. -->
+  <xsl:template name="not-as-shallow-copy">
     <xsl:copy>
       <xsl:copy-of select="@*"/>
     </xsl:copy>
+  </xsl:template>
+  
+  <!-- OPTIONAL: remove WWP text content -->
+  
+  <!-- If requested, remove the content of WWP notes and <figDesc>s. -->
+  <xsl:template match="note[@type eq 'WWP'][$removing-wwp-text eq true()]
+                     | figDesc             [$removing-wwp-text eq true()]">
+    <xsl:call-template name="not-as-shallow-copy"/>
   </xsl:template>
   
   <!-- MODE: #default -->
@@ -121,6 +129,9 @@
   
   <!-- Replace <lb>s and <cb>s with a single space. -->
   <xsl:template match="lb | cb">
+    <xsl:if test="not($removing-line-and-column-breaks)">
+      <xsl:call-template name="not-as-shallow-copy"/>
+    </xsl:if>
     <xsl:text> </xsl:text>
   </xsl:template>
   
