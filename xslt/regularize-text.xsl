@@ -13,7 +13,9 @@
     Author: Ashley M. Clark
   -->
   
-  <xsl:output indent="yes"/>
+  <xsl:output indent="no"/>
+  
+  <xsl:param name="remove-wwp-text" as="xs:boolean" select="false()"/>
   
   
   <!-- FUNCTIONS -->
@@ -50,6 +52,16 @@
     <xsl:apply-templates select="$first-pass" mode="unifier"/>
   </xsl:template>
   
+  <!-- OPTIONAL: remove WWP text content -->
+  
+  <!-- If requested, remove the content of WWP notes and <figDesc>s. -->
+  <xsl:template match="note[@type eq 'WWP'][$remove-wwp-text eq true()]
+                     | figDesc             [$remove-wwp-text eq true()]">
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+    </xsl:copy>
+  </xsl:template>
+  
   <!-- MODE: #default -->
   
   <!-- Normalize 'ſ' to 's' and (temporarily) turn soft hyphens into '@'. Whitespace 
@@ -66,13 +78,6 @@
     </xsl:copy>
   </xsl:template>
   
-  <!-- Per Syd's capitalized.xslt, remove the content of WWP notes. -->
-  <xsl:template match="note[@type eq 'WWP']">
-    <xsl:copy>
-      <xsl:copy-of select="@*"/>
-    </xsl:copy>
-  </xsl:template>
-  
   <!-- Favor <expan>, <reg> and <corr> within <choice>. -->
   <xsl:template match="choice">
     <xsl:copy>
@@ -80,23 +85,38 @@
       <xsl:apply-templates mode="choice"/>
     </xsl:copy>
   </xsl:template>
-  <xsl:template match="abbr | sic | orig" mode="choice"/>
+  <xsl:template match="abbr | sic | orig" mode="choice">
+    <xsl:copy>
+      <xsl:attribute name="read" select="text()"/>
+    </xsl:copy>
+  </xsl:template>
   <xsl:template match="expan | corr | reg" mode="choice">
-    <xsl:apply-templates mode="#default"/>
+    <xsl:copy>
+      <xsl:apply-templates mode="#default"/>
+    </xsl:copy>
   </xsl:template>
   
-  <!-- Remove wrapper <hi>s which capture Distinct Initial Capitals (and make sure 
-    the text content is uppercased). -->
+  <!-- Make sure Distinct Initial Capitals are uppercased. -->
   <xsl:template match="hi[@rend][contains(@rend,'class(#DIC)')]">
-    <xsl:value-of select="upper-case(text())"/>
+    <xsl:variable name="up" select="upper-case(text())"/>
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+      <xsl:if test="$up ne text()">
+        <xsl:attribute name="read" select="text()"/>
+      </xsl:if>
+      <xsl:value-of select="$up"/>
+    </xsl:copy>
   </xsl:template>
   
   <!-- Silently replace <vuji> with its regularized character. -->
   <xsl:template match="vuji">
     <xsl:variable name="text" select="normalize-space(.)"/>
-    <xsl:value-of select="if ( $text eq 'VV' ) then 'W'
-                     else if ( $text eq 'vv' ) then 'w'
-                     else translate($text,'vujiVUJI','uvijUVIJ')"/>
+    <xsl:copy>
+      <xsl:attribute name="read" select="text()"/>
+      <xsl:value-of select="if ( $text eq 'VV' ) then 'W'
+                       else if ( $text eq 'vv' ) then 'w'
+                       else translate($text,'vujiVUJI','uvijUVIJ')"/>
+    </xsl:copy>
   </xsl:template>
   
   <!-- Replace <lb>s and <cb>s with a single space. -->
@@ -127,6 +147,7 @@
     <xsl:if test="not(preceding-sibling::*[1][wf:is-pbGroup-candidate(.)])">
       <ab xmlns="http://www.wwp.northeastern.edu/ns/textbase" type="pbGroup">
         <xsl:variable name="my-position" select="position()"/>
+        <xsl:text>&#xa;</xsl:text>
         <xsl:call-template name="pbSubsequencer">
           <xsl:with-param name="start-position" select="$my-position"/>
         </xsl:call-template>
@@ -160,12 +181,12 @@
         <xsl:variable name="potential-group" select=" if ( $first-nonmatch ne '' ) then 
                                                         subsequence($siblings-after, 1, $first-nonmatch - 1) 
                                                       else $siblings-after"/>
-        <xsl:variable name="pattern" select="for $i in $potential-group
+        <!--<xsl:variable name="pattern" select="for $i in $potential-group
                                              return 
                                               if ( $i[self::mw] ) then 
                                                 $i/@type
                                               else $i/local-name()"/>
-        <!--<xsl:message>
+        <xsl:message>
           <xsl:value-of select="string-join($pattern,'/')"/>
         </xsl:message>-->
         <xsl:copy-of select="$potential-group"/>
@@ -179,7 +200,7 @@
     </xsl:if>
   </xsl:template>
   
-  <!-- Delete certain types of <mw> when they trail along with a pbGroup. -->
+  <!-- Delete whitespace and certain types of <mw> when they trail along with a pbGroup. -->
   <xsl:template match="mw [@type = ('border', 'border-ornamental', 'border-rule', 'other', 'pressFig', 'unknown')]
                           [preceding-sibling::*[1][wf:is-pbGroup-candidate(.)]]
                       | text()[normalize-space(.) eq ''] 
@@ -188,14 +209,21 @@
   
   <!-- MODE: pbGrouper -->
   
-  <!-- Any text content of a pbGroup is ignored. -->
-  <xsl:template match="text()" mode="pbGrouper"/>
+  <!-- Any non-whitespace content of a pbGroup is ignored. -->
+  <xsl:template match="text()" mode="pbGrouper">
+    <xsl:if test="normalize-space(.) eq ''">
+      <xsl:copy/>
+    </xsl:if>
+  </xsl:template>
   
   <!-- The members of a pbGroup are copied through, retaining their attributes but 
     none of their children. -->
   <xsl:template match="mw | pb | milestone" mode="pbGrouper">
     <xsl:copy>
       <xsl:copy-of select="@*"/>
+      <xsl:if test="node()">
+        <xsl:attribute name="read" select="text()"/>
+      </xsl:if>
     </xsl:copy>
   </xsl:template>
   
@@ -208,6 +236,12 @@
     <xsl:variable name="munged" select="if ( preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')] ) then
                                           substring-after(., wf:get-first-word(.))
                                         else ."/>
+    <xsl:if test="preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')]">
+      <xsl:variable name="wordpart" select="wf:get-first-word(.)"/>
+      <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
+        <xsl:attribute name="read" select="$wordpart"/>
+      </xsl:element>
+    </xsl:if>
     <xsl:value-of select="wf:remove-shy($munged)"/>
   </xsl:template>
   
@@ -224,8 +258,10 @@
     <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
     <!--<xsl:variable name="last-word" select="concat($wordpart-one,$wordpart-two)"/>-->
     <xsl:value-of select="wf:remove-shy(.)"/>
-    <xsl:value-of select="wf:remove-shy($wordpart-two)"/>
-    <xsl:text> </xsl:text>
+    <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
+      <xsl:attribute name="read" select="''"/>
+      <xsl:value-of select="wf:remove-shy($wordpart-two)"/>
+    </xsl:element>
   </xsl:template>
   
   <!-- Add blank lines around pbGroups, to aid readability. -->
