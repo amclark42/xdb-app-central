@@ -230,38 +230,48 @@
   
   <!-- MODE: unifier -->
   
-  <!-- Remove '@' delimiters from text. If the preceding non-whitespace node ended 
-    with an '@', remove the initial word fragment. -->
-  <xsl:template match="text()" mode="unifier" priority="-5">
-    <xsl:variable name="munged" select="if ( preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')] ) then
-                                          substring-after(., wf:get-first-word(.))
-                                        else ."/>
+  <!-- Copy whitespace forward. -->
+  <xsl:template match="text()[normalize-space(.) eq '']" mode="unifier" priority="10">
+    <xsl:copy/>
+  </xsl:template>
+  
+  <!-- If text has a soft-hyphen delimiter at the end, grab the next part of the 
+    word from the next non-whitespace text node. -->
+  <xsl:template name="wordpart-end">
+    <xsl:if test="matches(.,'@\s*$')">
+      <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
+      <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
+      <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
+        <xsl:attribute name="read" select="''"/>
+        <xsl:value-of select="wf:remove-shy($wordpart-two)"/>
+      </xsl:element>
+    </xsl:if>
+  </xsl:template>
+  
+  <!-- If the preceding non-whitespace text node ends with a soft-hyphen delimiter, 
+    create a <seg> placeholder for the part of the word drawn out. -->
+  <xsl:template name="wordpart-start">
     <xsl:if test="preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')]">
       <xsl:variable name="wordpart" select="wf:get-first-word(.)"/>
       <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
         <xsl:attribute name="read" select="$wordpart"/>
       </xsl:element>
     </xsl:if>
+  </xsl:template>
+  
+  <!-- Remove '@' delimiters from text. If the preceding non-whitespace node ended 
+    with an '@', remove the initial word fragment. If the delimiter occurs at the 
+    end of the text node, fold in the next part of the fragmented word. -->
+  <xsl:template match="text()" mode="unifier">
+    <xsl:variable name="wordpartStart" as="node()?">
+      <xsl:call-template name="wordpart-start"/>
+    </xsl:variable>
+    <xsl:copy-of select="$wordpartStart"/>
+    <xsl:variable name="munged" select="if ( $wordpartStart ) then
+                                          substring-after(., $wordpartStart/@read)
+                                        else ."/>
     <xsl:value-of select="wf:remove-shy($munged)"/>
-  </xsl:template>
-  
-  <!-- Copy whitespace forward. -->
-  <xsl:template match="text()[normalize-space(.) eq '']" mode="unifier">
-    <xsl:copy/>
-  </xsl:template>
-  
-  <!-- If text has a soft-hyphen delimiter at the end, grab the next part of the 
-    word from the next non-whitespace text node. -->
-  <xsl:template match="text()[matches(.,'@\s*$')]" mode="unifier">
-    <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
-    <xsl:variable name="wordpart-one" select="replace(.,'.*\s+(.+)@\s*$','$1')"/>
-    <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
-    <!--<xsl:variable name="last-word" select="concat($wordpart-one,$wordpart-two)"/>-->
-    <xsl:value-of select="wf:remove-shy(.)"/>
-    <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
-      <xsl:attribute name="read" select="''"/>
-      <xsl:value-of select="wf:remove-shy($wordpart-two)"/>
-    </xsl:element>
+    <xsl:call-template name="wordpart-end"/>
   </xsl:template>
   
   <!-- Add blank lines around pbGroups, to aid readability. -->
