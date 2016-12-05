@@ -74,7 +74,7 @@
   
   <!-- Normalize 'ſ' to 's' and (temporarily) turn soft hyphens into '@'. Whitespace 
     after a soft hyphen is dropped. -->
-  <xsl:template match="text()">
+  <xsl:template match="text()" name="normalizeText">
     <xsl:value-of select="replace(translate(.,'ſ­','s@'),'@\s*','@')"/>
   </xsl:template>
   
@@ -106,14 +106,32 @@
   
   <!-- Make sure Distinct Initial Capitals are uppercased. -->
   <xsl:template match="hi[@rend][contains(@rend,'class(#DIC)')]">
-    <xsl:variable name="up" select="upper-case(text())"/>
+    <xsl:variable name="up">
+      <xsl:apply-templates/>
+    </xsl:variable>
     <xsl:copy>
       <xsl:copy-of select="@*"/>
-      <xsl:if test="$up ne text()">
+      <xsl:if test="not(*) and $up ne data(.)">
         <xsl:attribute name="read" select="text()"/>
       </xsl:if>
-      <xsl:value-of select="$up"/>
+      <xsl:copy-of select="$up"/>
     </xsl:copy>
+  </xsl:template>
+  
+  <xsl:template match="hi[@rend][contains(@rend,'class(#DIC)')]//text()" priority="15">
+    <xsl:variable name="replacement">
+      <xsl:call-template name="normalizeText"/>
+    </xsl:variable>
+    <xsl:choose>
+      <xsl:when test="$replacement ne .">
+        <xsl:element name="seg">
+          <xsl:attribute name="read" select="data(.)"/>
+        </xsl:element>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:copy/>
+      </xsl:otherwise>
+    </xsl:choose>
   </xsl:template>
   
   <!-- Silently replace <vuji> with its regularized character. -->
@@ -251,7 +269,7 @@
   <xsl:template name="wordpart-end">
     <xsl:if test="matches(.,'@\s*$')">
       <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
-      <xsl:variable name="wordpart-two" select="wf:get-first-word($text-after)"/>
+      <xsl:variable name="wordpart-two" select="if ( $text-after ) then wf:get-first-word($text-after) else ''"/>
       <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
         <xsl:attribute name="read" select="''"/>
         <xsl:value-of select="wf:remove-shy($wordpart-two)"/>
@@ -263,6 +281,9 @@
     create a <seg> placeholder for the part of the word drawn out. -->
   <xsl:template name="wordpart-start">
     <xsl:if test="preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')]">
+      <xsl:if test="preceding::text()[1][matches(.,'\s*$')]">
+        <xsl:text> </xsl:text>
+      </xsl:if>
       <xsl:variable name="wordpart" select="wf:get-first-word(.)"/>
       <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
         <xsl:attribute name="read" select="$wordpart"/>
@@ -274,7 +295,7 @@
     with an '@', remove the initial word fragment. If the delimiter occurs at the 
     end of the text node, fold in the next part of the fragmented word. -->
   <xsl:template match="text()" mode="unifier">
-    <xsl:variable name="wordpartStart" as="node()?">
+    <xsl:variable name="wordpartStart" as="node()*">
       <xsl:call-template name="wordpart-start"/>
     </xsl:variable>
     <xsl:copy-of select="$wordpartStart"/>
