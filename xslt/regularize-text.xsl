@@ -17,8 +17,15 @@
   
   <xsl:output indent="no"/>
   
-  <xsl:param name="removing-wwp-text"               as="xs:boolean" select="false()"/>
-  <xsl:param name="removing-line-and-column-breaks" as="xs:boolean" select="false()"/>
+  <!-- PARAMETERS -->
+  
+  <!-- Parameter option to keep/remove WWP-created content within <text>, such as 
+    <note type="WWP"> and <figDesc>. The default is to keep WWP content. -->
+  <xsl:param name="keep-wwp-text"               as="xs:boolean" select="true()"/>
+  
+  <!-- Parameter option to keep/remove <lb>s and <cb>s from output. The default is 
+    to keep them. -->
+  <xsl:param name="keep-line-and-column-breaks" as="xs:boolean" select="true()"/>
   
   
   <!-- FUNCTIONS -->
@@ -26,7 +33,10 @@
   <xsl:function name="wf:get-first-word" as="xs:string">
     <xsl:param name="text" as="xs:string"/>
     <xsl:variable name="slim-text" select="normalize-space($text)"/>
-    <xsl:value-of select="replace($slim-text,'^\s*(\w+[\.,;:?]?)((\s+|[―—]*).*)?$','$1')"/>
+    <xsl:variable name="pattern">
+      <xsl:text>^\s*([\w'-]+[\.”)/,;:!?\]]?)((\s+|[―—]*|-{2,}).*)?$</xsl:text>
+    </xsl:variable>
+    <xsl:value-of select="replace($slim-text, $pattern, '$1')"/>
   </xsl:function>
   
   <xsl:function name="wf:is-pbGroup-candidate" as="xs:boolean">
@@ -62,12 +72,30 @@
     </xsl:copy>
   </xsl:template>
   
-  <!-- OPTIONAL: remove WWP text content -->
+  <!-- Copy the element and its attributes, and add @read on any text content. -->
+  <xsl:template name="read-as-copy">
+    <xsl:copy>
+      <xsl:copy-of select="@*"/>
+      <xsl:if test="node()">
+        <xsl:attribute name="read" select="data(.)"/>
+      </xsl:if>
+    </xsl:copy>
+  </xsl:template>
+  
+  <!-- OPTIONAL: remove WWP text content. -->
   
   <!-- If requested, remove the content of WWP notes and <figDesc>s. -->
-  <xsl:template match="note[@type eq 'WWP'][$removing-wwp-text eq true()]
-                     | figDesc             [$removing-wwp-text eq true()]">
+  <xsl:template match="note[@type eq 'WWP'][not($keep-wwp-text)]
+                     | figDesc             [not($keep-wwp-text)]">
     <xsl:call-template name="not-as-shallow-copy"/>
+  </xsl:template>
+  
+  <!-- OPTIONAL: remove <lb>s and <cb>s. Add a single space. -->
+  <xsl:template match="lb | cb">
+    <xsl:if test="$keep-line-and-column-breaks">
+      <xsl:call-template name="not-as-shallow-copy"/>
+    </xsl:if>
+    <xsl:text> </xsl:text>
   </xsl:template>
   
   <!-- MODE: #default -->
@@ -134,7 +162,7 @@
     </xsl:choose>
   </xsl:template>
   
-  <!-- Silently replace <vuji> with its regularized character. -->
+  <!-- Replace <vuji>'s content with its regularized character. -->
   <xsl:template match="vuji">
     <xsl:variable name="text" select="normalize-space(.)"/>
     <xsl:copy>
@@ -145,12 +173,9 @@
     </xsl:copy>
   </xsl:template>
   
-  <!-- Replace <lb>s and <cb>s with a single space. -->
-  <xsl:template match="lb | cb">
-    <xsl:if test="not($removing-line-and-column-breaks)">
-      <xsl:call-template name="not-as-shallow-copy"/>
-    </xsl:if>
-    <xsl:text> </xsl:text>
+  <!-- Remove the content of <ref type="pageNum">s. -->
+  <xsl:template match="ref[@type][@type eq 'pageNum']">
+    <xsl:call-template name="read-as-copy"/>
   </xsl:template>
   
   <!-- Working assumptions:
@@ -247,13 +272,8 @@
   
   <!-- The members of a pbGroup are copied through, retaining their attributes but 
     none of their children. -->
-  <xsl:template match="mw | pb | milestone" mode="pbGrouper">
-    <xsl:copy>
-      <xsl:copy-of select="@*"/>
-      <xsl:if test="node()">
-        <xsl:attribute name="read" select="text()"/>
-      </xsl:if>
-    </xsl:copy>
+  <xsl:template match="mw | pb | milestone" mode="#default pbGrouper" priority="-10">
+    <xsl:call-template name="read-as-copy"/>
   </xsl:template>
   
   
