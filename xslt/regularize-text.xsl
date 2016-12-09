@@ -52,7 +52,7 @@
   
   <xsl:function name="wf:remove-shy" as="xs:string">
     <xsl:param name="text" as="xs:string"/>
-    <xsl:value-of select="replace(replace($text,'@\s*',''),'(\w-)\s+','$1')"/>
+    <xsl:value-of select="replace($text,'@\s*','')"/>
   </xsl:function>
   
   
@@ -287,7 +287,7 @@
   <!-- If text has a soft-hyphen delimiter at the end, grab the next part of the 
     word from the next non-whitespace text node. -->
   <xsl:template name="wordpart-end">
-    <xsl:if test="matches(.,'[@-]\s*$')">
+    <xsl:if test="matches(.,'@\s*$')">
       <xsl:variable name="text-after" select="following::text()[not(normalize-space(.) eq '')][1]"/>
       <xsl:variable name="wordpart-two" select="if ( $text-after ) then wf:get-first-word($text-after) else ''"/>
       <xsl:element name="seg" namespace="http://www.wwp.northeastern.edu/ns/textbase">
@@ -300,7 +300,7 @@
   <!-- If the preceding non-whitespace text node ends with a soft-hyphen delimiter, 
     create a <seg> placeholder for the part of the word drawn out. -->
   <xsl:template name="wordpart-start">
-    <xsl:if test="preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'[@-]\s*$')]">
+    <xsl:if test="preceding::text()[not(normalize-space(.) eq '')][1][matches(.,'@\s*$')]">
       <xsl:if test="preceding::text()[1][matches(.,'\s*$')]">
         <xsl:text> </xsl:text>
       </xsl:if>
