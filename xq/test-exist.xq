@@ -9,8 +9,8 @@ declare namespace wwp="http://www.wwp.northeastern.edu/ns/textbase";
     let $stylesheet := doc('test_backends_01.xslt')
     return
       if ( doc-available($docPath) ) then
-        transform:transform($doc, $stylesheet, <parameters/>)
+        transform:transform(doc($docPath), $stylesheet, <parameters/>)
       else
-        <p>Could not find file {$requested}!</p>
+        <p>Could not find file "{$requested}"!</p>
   }
 </div>
